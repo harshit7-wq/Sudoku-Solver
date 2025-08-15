@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sudoku Solver</title>
+<style>
+  :root{
+    --bg:#0f1226; --panel:#171c3c; --panel2:#11142c; --line:#2b3370;
+    --text:#ecf0ff; --muted:#b9c3ff; --accent:#7aa7ff; --bad:#ff5b6e; --good:#2bd4a7;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Arial;
+    min-height:100vh; display:flex; justify-content:center; align-items:center;
+    background: radial-gradient(1000px 600px at 20% 5%, #171a36, #0b0e22) fixed, var(--bg);
+    color:var(--text);
+  }
+  .wrap{ width:min(980px,95vw); padding:16px }
+  header{
+    background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line); border-radius:16px; padding:12px 14px; margin-bottom:14px;
+    display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  h1{ margin:0; font-size:clamp(18px,3.2vw,24px) }
+  .controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+  button{
+    background:linear-gradient(180deg,#232958,#171c3e);
+    border:1px solid var(--line); color:var(--text); border-radius:10px; padding:.5rem .8rem; font-weight:700; cursor:pointer;
+    box-shadow:0 6px 16px rgba(0,0,0,.25); transition:border-color .2s, transform .05s;
+  }
+  button:hover{ border-color:var(--accent) }
+  button:active{ transform:translateY(1px) }
+  .pill{ background:#121531; border:1px solid var(--line); padding:.35rem .6rem; border-radius:999px; color:var(--muted) }
+
+  .panel{
+    background:linear-gradient(180deg,#151940,#121531);
+    border:1px solid var(--line); border-radius:16px; padding:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+
+  /* Sudoku grid */
+  .grid{
+    width:min(520px, 90vw); aspect-ratio:1/1;
+    display:grid; grid-template-columns:repeat(9,1fr); gap:0;
+    border:2px solid var(--line); border-radius:12px; overflow:hidden; background:#0e1130;
+    margin:auto;
+  }
+  .cell{
+    border:1px solid #20285e; display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .cell input{
+    width:100%; height:100%; border:0; outline:0; background:transparent; color:var(--text);
+    text-align:center; font-size:clamp(16px, 6vw, 28px); font-weight:700; caret-color:var(--accent);
+  }
+  .cell.fixed input{ color:#a1b2ff }
+  .cell.invalid{ background:rgba(255,90,110,.18) }
+  .cell:focus-within{ box-shadow: inset 0 0 0 2px var(--accent) }
+
+  /* bold subgrid borders */
+  .cell:nth-child(3n+1){ }
+  .grid > :nth-child(9n+1){ border-left:2px solid var(--line) }
+  .grid > :nth-child(9n){ border-right:2px solid var(--line) }
+  .grid > :nth-child(n+1):nth-child(-n+9){ border-top:2px solid var(--line) }
+  .grid > :nth-child(n+73){ border-bottom:2px solid var(--line) }
+  /* thicker lines between 3x3 boxes */
+  .grid > :nth-child(n+1):nth-child(-n+27){ border-top-width:2px }
+  .grid > :nth-child(n+55):nth-child(-n+81){ border-bottom-width:2px }
+  .grid > :nth-child(3n+1){ border-left-width:2px }
+  .grid > :nth-child(9n){ border-right-width:2px }
+  .grid > :nth-child(n+28):nth-child(-n+54){ border-top-width:2px }
+
+  .io{
+    display:grid; grid-template-columns:1fr; gap:10px; margin-top:14px;
+  }
+  .io textarea{
+    width:100%; min-height:92px; resize:vertical; border-radius:10px; border:1px solid var(--line);
+    background:#0e1130; color:var(--text); padding:10px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  .footer{
+    display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;
+    color:var(--muted); font-size:.95rem;
+  }
+  .ok{ color:var(--good); font-weight:800 }
+  .bad{ color:var(--bad); font-weight:800 }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>🧩 Sudoku Solver</h1>
+      <div class="controls">
+        <button id="btn-check">Check</button>
+        <button id="btn-solve">Solve</button>
+        <button id="btn-clear">Clear</button>
+        <button id="btn-sample-e">Load Easy</button>
+        <button id="btn-sample-h">Load Hard</button>
+        <span class="pill" id="status">Ready</span>
+      </div>
+    </header>
+
+    <div class="panel">
+      <div id="grid" class="grid" aria-label="Sudoku grid"></div>
+
+      <div class="io">
+        <div class="footer">
+          <div>Tip: click a cell and type 1–9. Use arrows or Tab to move. Paste a puzzle below (81 digits, 0/ . = blank).</div>
+          <div>Filled: <span id="filled">0</span>/81</div>
+        </div>
+        <textarea id="io" placeholder="Paste 81 characters (row-major). Example:
+530070000
+600195000
+098000060
+800060003
+400803001
+700020006
+060000280
+000419005
+000080079"></textarea>
+        <div class="controls" style="justify-content:flex-end">
+          <button id="btn-import">Import</button>
+          <button id="btn-export">Export</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div>Status: <span id="msg">Waiting for input…</span></div>
+      <div>Solver: backtracking with constraint checks</div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ====== Helpers ======
+  const gridEl = document.getElementById('grid');
+  const statusPill = document.getElementById('status');
+  const msgEl = document.getElementById('msg');
+  const filledEl = document.getElementById('filled');
+  const ioTA = document.getElementById('io');
+
+  // Build 9x9 inputs
+  const cells = [];
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const inp = document.createElement('input');
+      inp.inputMode = 'numeric';
+      inp.autocomplete = 'off';
+      inp.maxLength = 1;
+      inp.dataset.r = r;
+      inp.dataset.c = c;
+      inp.addEventListener('input', onInput);
+      inp.addEventListener('keydown', onKeyNav);
+      cell.appendChild(inp);
+      gridEl.appendChild(cell);
+      cells.push(inp);
+    }
+  }
+
+  function idx(r,c){ return r*9 + c; }
+  function getVal(r,c) {
+    const v = cells[idx(r,c)].value.trim();
+    return /^[1-9]$/.test(v) ? parseInt(v,10) : 0;
+  }
+  function setVal(r,c, v, fixed=false){
+    const inp = cells[idx(r,c)];
+    inp.value = v ? String(v) : '';
+    inp.readOnly = !!fixed;
+    inp.parentElement.classList.toggle('fixed', !!fixed);
+  }
+  function readBoard(){
+    const b = Array.from({length:9},()=>Array(9).fill(0));
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++) b[r][c] = getVal(r,c);
+    return b;
+  }
+  function writeBoard(board, fixedMask=null){
+    let fill = 0;
+    for (let r=0;r<9;r++){
+      for (let c=0;c<9;c++){
+        const v = board[r][c];
+        setVal(r,c, v, fixedMask ? fixedMask[r][c] : false);
+        if (v) fill++;
+      }
+    }
+    filledEl.textContent = fill;
+    validateAndMark();
+  }
+
+  function clearMarks(){
+    cells.forEach(inp => inp.parentElement.classList.remove('invalid'));
+  }
+
+  function validateAndMark(){
+    clearMarks();
+    const b = readBoard();
+    let ok = true;
+
+    const seenRow = Array.from({length:9},()=>new Set());
+    const seenCol = Array.from({length:9},()=>new Set());
+    const seenBox = Array.from({length:9},()=>new Set());
+
+    const mark = (r,c) => { cells[idx(r,c)].parentElement.classList.add('invalid'); ok = false; };
+
+    for (let r=0;r<9;r++){
+      for (let c=0;c<9;c++){
+        const v = b[r][c];
+        if (!v) continue;
+        const bId = Math.floor(r/3)*3 + Math.floor(c/3);
+        if (seenRow[r].has(v) || seenCol[c].has(v) || seenBox[bId].has(v)) {
+          mark(r,c);
+        }
+        seenRow[r].add(v); seenCol[c].add(v); seenBox[bId].add(v);
+      }
+    }
+
+    statusPill.textContent = ok ? 'Valid so far' : 'Conflict';
+    statusPill.style.color = ok ? 'var(--good)' : 'var(--bad)';
+    msgEl.textContent = ok ? 'No duplicate in any row, column, or box.' : 'There is a conflict (duplicate number).';
+    return ok;
+  }
+
+  function isSafe(board, r, c, v){
+    for (let i=0;i<9;i++){
+      if (board[r][i] === v) return false;
+      if (board[i][c] === v) return false;
+    }
+    const br = Math.floor(r/3)*3, bc = Math.floor(c/3)*3;
+    for (let i=0;i<3;i++) for (let j=0;j<3;j++){
+      if (board[br+i][bc+j] === v) return false;
+    }
+    return true;
+  }
+
+  function findEmpty(board){
+    let best = null, bestCount = 10;
+    for (let r=0;r<9;r++){
+      for (let c=0;c<9;c++){
+        if (board[r][c] !== 0) continue;
+        let cnt = 0;
+        for (let v=1; v<=9; v++) if (isSafe(board,r,c,v)) cnt++;
+        if (cnt < bestCount){ bestCount = cnt; best = {r,c}; if (cnt === 1) return best; }
+      }
+    }
+    return best; // null if none
+  }
+
+  function solveSudoku(board){
+    const spot = findEmpty(board);
+    if (!spot) return true; // solved
+    const {r,c} = spot;
+
+    for (let v=1; v<=9; v++){
+      if (isSafe(board,r,c,v)){
+        board[r][c] = v;
+        if (solveSudoku(board)) return true;
+        board[r][c] = 0;
+      }
+    }
+    return false;
+  }
+
+  // ====== UI Handlers ======
+  function onInput(e){
+    const el = e.target;
+    const v = el.value.replace(/[^1-9]/g,'').slice(0,1);
+    el.value = v;
+    let filled = 0;
+    cells.forEach(i => { if (i.value) filled++; });
+    filledEl.textContent = filled;
+    validateAndMark();
+  }
+
+  function onKeyNav(e){
+    const r = +e.target.dataset.r, c = +e.target.dataset.c;
+    let nr=r, nc=c;
+    if (e.key === 'ArrowUp') nr = Math.max(0, r-1);
+    else if (e.key === 'ArrowDown') nr = Math.min(8, r+1);
+    else if (e.key === 'ArrowLeft') nc = Math.max(0, c-1);
+    else if (e.key === 'ArrowRight') nc = Math.min(8, c+1);
+    else return;
+    e.preventDefault();
+    cells[idx(nr,nc)].focus();
+  }
+
+  // Import/Export helpers
+  function boardToString(board){
+    return board.map(row => row.map(v => v||0).join('')).join('\n');
+  }
+  function stringToBoard(str){
+    const digits = str.replace(/[^0-9.]/g,'').replace(/\./g,'0');
+    if (digits.length !== 81) return null;
+    const b = Array.from({length:9},()=>Array(9).fill(0));
+    for (let i=0;i<81;i++){
+      const d = parseInt(digits[i],10);
+      b[Math.floor(i/9)][i%9] = isNaN(d) ? 0 : d;
+    }
+    return b;
+  }
+
+  // Buttons
+  document.getElementById('btn-check').addEventListener('click', () => {
+    validateAndMark();
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    writeBoard(Array.from({length:9},()=>Array(9).fill(0)));
+    statusPill.textContent = 'Cleared';
+    statusPill.style.color = 'var(--muted)';
+    msgEl.textContent = 'All cells cleared.';
+  });
+
+  document.getElementById('btn-import').addEventListener('click', () => {
+    const b = stringToBoard(ioTA.value);
+    if (!b){ msgEl.textContent = 'Paste 81 digits (0 or . for blanks).'; statusPill.textContent='Import error'; statusPill.style.color='var(--bad)'; return; }
+    writeBoard(b);
+    statusPill.textContent = 'Imported';
+    statusPill.style.color = 'var(--accent)';
+    msgEl.textContent = 'Puzzle imported from text.';
+  });
+
+  document.getElementById('btn-export').addEventListener('click', () => {
+    const b = readBoard();
+    ioTA.value = boardToString(b);
+    msgEl.textContent = 'Exported current grid to the textbox.';
+    statusPill.textContent = 'Exported';
+    statusPill.style.color = 'var(--accent)';
+  });
+
+  document.getElementById('btn-solve').addEventListener('click', () => {
+    if (!validateAndMark()){
+      msgEl.textContent = 'Fix conflicts before solving.';
+      statusPill.textContent = 'Invalid';
+      statusPill.style.color = 'var(--bad)';
+      return;
+    }
+    const b = readBoard();
+    const t0 = performance.now();
+    const ok = solveSudoku(b);
+    const t1 = performance.now();
+    if (ok){
+      writeBoard(b);
+      statusPill.textContent = 'Solved';
+      statusPill.style.color = 'var(--good)';
+      msgEl.textContent = `Solved in ${(t1 - t0).toFixed(2)} ms.`;
+    } else {
+      statusPill.textContent = 'No solution';
+      statusPill.style.color = 'var(--bad)';
+      msgEl.textContent = 'This puzzle has no valid solution.';
+    }
+  });
+
+  // Sample puzzles
+  const sampleEasy = `
+530070000
+600195000
+098000060
+800060003
+400803001
+700020006
+060000280
+000419005
+000080079`;
+  const sampleHard = `
+000000907
+000420180
+000705026
+100904000
+050000040
+000507009
+920108000
+034059000
+507000000`;
+
+  document.getElementById('btn-sample-e').addEventListener('click', () => {
+    ioTA.value = sampleEasy.trim();
+    document.getElementById('btn-import').click();
+  });
+  document.getElementById('btn-sample-h').addEventListener('click', () => {
+    ioTA.value = sampleHard.trim();
+    document.getElementById('btn-import').click();
+  });
+
+  // Init: blank board
+  writeBoard(Array.from({length:9},()=>Array(9).fill(0)));
+})();
+</script>
+</body>
+</html>
